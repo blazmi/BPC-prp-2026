@@ -1,86 +1,53 @@
-//
-// Created by student on 11.03.26.
-//
-#include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/u_int16_multi_array.hpp"
+#include "../include/nodes/Line_node.hpp"
+#include <algorithm> // Pro std::clamp
 
-#include "nodes/Line_node.hpp"
-
-namespace nodes
-{
+namespace nodes {
 
     LineNode::LineNode() : Node("line_node")
     {
-        line_sensors_subscriber_ =
-            this->create_subscription<std_msgs::msg::UInt16MultiArray>(
-                "/bpc_prp_robot/line_sensors",
-                10,
-                std::bind(&LineNode::on_line_sensors_msg, this, std::placeholders::_1)
-            );
+        line_sensors_subscriber_ = this->create_subscription<std_msgs::msg::UInt16MultiArray>(
+            "/bpc_prp_robot/line_sensors",
+            10,
+            std::bind(&LineNode::on_line_sensors_msg, this, std::placeholders::_1)
+        );
     }
 
-    LineNode::~LineNode()
-    {
-    }
+    LineNode::~LineNode() {}
 
     float LineNode::get_continuous_line_pose() const
     {
-        return continuous;
+        return continuous_.load();
     }
 
-    DiscreteLinePose LineNode::get_discrete_line_pose() const
+    algorithms::DiscreteLinePose LineNode::get_discrete_line_pose() const
     {
-        return discrete;
+        return discrete_.load();
     }
 
     void LineNode::on_line_sensors_msg(const std_msgs::msg::UInt16MultiArray::SharedPtr msg)
     {
-        if (msg->data.size() < 2)
-        {
+        if (msg->data.size() < 2) {
             RCLCPP_WARN(this->get_logger(), "Line sensor message too small");
             return;
         }
 
-        uint16_t left = static_cast<uint16_t>(msg->data[0]);
-        uint16_t right = static_cast<uint16_t>(msg->data[1]);
+        uint16_t left = msg->data[0];
+        uint16_t right = msg->data[1];
 
-        auto l_calibrated = (left - 19) / (420 - 19);
-        auto r_calibrated = (right - 20) / (510 - 20);
+        // OPRAVA 1: Použití desetinných čísel (.0f) zabrání uříznutí na 0 nebo 1
+        float l_raw = (left - 19.0f) / (420.0f - 19.0f);
+        float r_raw = (right - 20.0f) / (510.0f - 20.0f);
 
-        continuous = estimate_continuous_line_pose(l_calibrated , r_calibrated);
-        discrete = estimate_discrete_line_pose(l_calibrated, r_calibrated);
+        // OPRAVA 2: Clamp zajistí, že číslo nepřeteče mimo povolený rozsah <0.0, 1.0>
+        float l_calibrated = std::clamp(l_raw, 0.0f, 1.0f);
+        float r_calibrated = std::clamp(r_raw, 0.0f, 1.0f);
 
-        RCLCPP_INFO(this->get_logger(),
-                    "Sensors: L=%u R=%u", left,right );
-        (void)continuous;
-        (void)discrete;
+        // OPRAVA 3: Použití naší nové samostatné třídy
+        continuous_.store(algorithms::LineEstimator::estimate_continuous(l_calibrated, r_calibrated));
+        discrete_.store(algorithms::LineEstimator::estimate_discrete(l_calibrated, r_calibrated));
+
+        // Odkomentuj pro debugování:
+        // RCLCPP_INFO(this->get_logger(), "Sensors: L=%u R=%u | Cont: %f", left, right, continuous_.load());
     }
 
-    float LineNode::estimate_continuous_line_pose(float left_value, float right_value)
-    {
-        float sum = left_value - right_value;
-
-        if (sum == 0.0f)
-            return 0.0f;
-
-        return (right_value - left_value) / sum;
-    }
-
-    DiscreteLinePose LineNode::estimate_discrete_line_pose(float l_norm, float r_norm)
-    {
-        const float threshold = 0.3f;
-
-        bool left_detected = l_norm > threshold;
-        bool right_detected = r_norm > threshold;
-
-        if (left_detected && right_detected)
-            return DiscreteLinePose::LineBoth;
-        if (left_detected)
-            return DiscreteLinePose::LineOnLeft;
-        if (right_detected)
-            return DiscreteLinePose::LineOnRight;
-
-        return DiscreteLinePose::LineNone;
-    }
-
-}
+} // namespace nodes

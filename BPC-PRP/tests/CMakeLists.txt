@@ -1,15 +1,24 @@
-cmake_minimum_required(VERSION 3.20)
-
-include_directories(../include)
-
+# 1. Hledání knihovny GTest pro testování
 find_package(GTest REQUIRED)
-enable_testing()
+include(GoogleTest)
 
-macro(make_units_test name)
-    add_executable(${name} t_${name}.cpp ${SRC})
-    target_link_libraries(${name} GTest::GTest GTest::Main)
-    ament_target_dependencies(${name} rclcpp std_msgs sensor_msgs cv_bridge image_transport visualization_msgs)
-    add_test(NAME ${name} COMMAND ${name})
-endmacro()
+# 2. Vytvoření testovacího programu
+# Zde spojíme tvůj nový testovací soubor a reálnou implementaci estimátoru
+add_executable(t_line_estimator
+        t_line_estimator.cpp
+        ${PROJECT_SOURCE_DIR}/src/algorithms/line_estimator.cpp
+)
 
-make_units_test(example)
+# 3. Přidání cest k hlavičkovým souborům
+# Tohle říká kompilátoru, kde má hledat soubory, když v kódu napíšeš #include "..."
+target_include_directories(t_line_estimator PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+# 4. Připojení knihovny GTest k našemu programu
+target_link_libraries(t_line_estimator
+        GTest::gtest_main
+)
+
+# 5. Registrace testu pro CLion a CTest
+gtest_discover_tests(t_line_estimator)

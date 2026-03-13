@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "example.hpp"
+#include "../include/example.hpp"
 
 // Basic test case that just calls the function
 TEST(ExampleLibTest, CallFunction) {

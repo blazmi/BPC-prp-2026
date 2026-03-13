@@ -4,43 +4,41 @@
 
 using namespace algorithms;
 
-constexpr float ERROR = 0.001;
-constexpr float WHEEL_BASE = 0.12;
-constexpr float WHEEL_RADIUS = 0.034;
+constexpr float ERROR = 0.001f;
+constexpr float WHEEL_BASE = 0.12f;
+constexpr float WHEEL_RADIUS = 0.033f;
 constexpr float WHEEL_CIRCUMFERENCE = 2 * M_PI * WHEEL_RADIUS;
-constexpr int32_t PULSES_PER_ROTATION = 585;
-
-
+constexpr int32_t PULSES_PER_ROTATION = 550;
 
 TEST(KinematicsTest, BackwardZeroVelocitySI) {
-    const float linear = 0;
-    const float angular = 0;
-    const float expected_l = 0;
-    const float expected_r = 0;
+    constexpr float linear = 0.0f;
+    constexpr float angular = 0.0f;
+    constexpr float expected_l = 0.0f;
+    constexpr float expected_r = 0.0f;
 
     Kinematics kin(WHEEL_RADIUS, WHEEL_BASE, PULSES_PER_ROTATION);
-    auto result = kin.inverse(RobotSpeed {linear, angular});
+    auto result = kin.inverse(RobotSpeed{linear, angular});
     EXPECT_NEAR(result.l, expected_l, ERROR);
     EXPECT_NEAR(result.r, expected_r, ERROR);
 }
 
 TEST(KinematicsTest, BackwardPositiveLinearVelocitySI) {
-    const float linear = 1.0;
-    const float angular = 0;
-    const float expected_l = 1.0 / WHEEL_CIRCUMFERENCE * 2 * M_PI;
-    const float expected_r = 1.0 / WHEEL_CIRCUMFERENCE * 2 * M_PI;
+    constexpr float linear = 1.0f;
+    constexpr float angular = 0.0f;
+    constexpr float expected_l = 1.0f / WHEEL_CIRCUMFERENCE * 2 * M_PI;
+    constexpr float expected_r = 1.0f / WHEEL_CIRCUMFERENCE * 2 * M_PI;
 
     Kinematics kin(WHEEL_RADIUS, WHEEL_BASE, PULSES_PER_ROTATION);
-    auto result = kin.inverse(RobotSpeed {linear,angular});
+    auto result = kin.inverse(RobotSpeed{linear, angular});
     EXPECT_NEAR(result.l, expected_l, ERROR);
     EXPECT_NEAR(result.r, expected_r, ERROR);
 }
 
 TEST(KinematicsTest, BackwardPositiveAngularVelocitySI) {
-    const float linear = 1.0;
-    const float angular = 0;
-    const float expected_l = -(0.5 * WHEEL_BASE) / WHEEL_CIRCUMFERENCE * (2 * M_PI);
-    const float expected_r = +(0.5 * WHEEL_BASE) / WHEEL_CIRCUMFERENCE * (2 * M_PI);
+    constexpr float linear = 0.0f;
+    constexpr float angular = 1.0f;
+    constexpr float expected_l = -(0.5f * WHEEL_BASE) / WHEEL_CIRCUMFERENCE * (2 * M_PI);
+    constexpr float expected_r = +(0.5f * WHEEL_BASE) / WHEEL_CIRCUMFERENCE * (2 * M_PI);
 
     Kinematics kin(WHEEL_RADIUS, WHEEL_BASE, PULSES_PER_ROTATION);
     auto result = kin.inverse(RobotSpeed{linear, angular});
@@ -49,10 +47,10 @@ TEST(KinematicsTest, BackwardPositiveAngularVelocitySI) {
 }
 
 TEST(KinematicsTest, ForwardZeroWheelSpeedSI) {
-    const float wheel_l = 0;
-    const float wheel_r = 0;
-    const float expected_l = 0;
-    const float expected_a= 0;
+    constexpr float wheel_l = 0;
+    constexpr float wheel_r = 0;
+    constexpr float expected_l = 0;
+    constexpr float expected_a= 0;
 
     Kinematics kin(WHEEL_RADIUS, WHEEL_BASE, PULSES_PER_ROTATION);
     auto result = kin.forward(WheelSpeed {wheel_l,wheel_r});
@@ -61,10 +59,10 @@ TEST(KinematicsTest, ForwardZeroWheelSpeedSI) {
 }
 
 TEST(KinematicsTest, ForwardEqualWheelSpeedsSI) {
-    const float wheel_l = 1;
-    const float wheel_r = 1;
-    const float expected_l = WHEEL_RADIUS;
-    const float expected_a= 0;
+    constexpr float wheel_l = 1;
+    constexpr float wheel_r = 1;
+    constexpr float expected_l = WHEEL_RADIUS;
+    constexpr float expected_a= 0;
 
     Kinematics kin(WHEEL_RADIUS, WHEEL_BASE, PULSES_PER_ROTATION);
     auto result = kin.forward(WheelSpeed {wheel_l,wheel_r});
@@ -73,10 +71,10 @@ TEST(KinematicsTest, ForwardEqualWheelSpeedsSI) {
 }
 
 TEST(KinematicsTest, ForwardOppositeWheelSpeedsSI) {
-    const float wheel_l = -1;
-    const float wheel_r = 1;
-    const float expected_l = 0;
-    const float expected_a= (WHEEL_RADIUS / (0.5 * WHEEL_BASE));
+    constexpr float wheel_l = -1;
+    constexpr float wheel_r = 1;
+    constexpr float expected_l = 0;
+    constexpr float expected_a= (WHEEL_RADIUS / (0.5 * WHEEL_BASE));
 
     Kinematics kin(WHEEL_RADIUS, WHEEL_BASE, PULSES_PER_ROTATION);
     auto result = kin.forward(WheelSpeed {wheel_l,wheel_r});
@@ -85,8 +83,8 @@ TEST(KinematicsTest, ForwardOppositeWheelSpeedsSI) {
 }
 
 TEST(KinematicsTest, ForwardAndBackwardSI) {
-    const float wheel_l = 1;
-    const float wheel_r = -0.5;
+    constexpr float wheel_l = 1;
+    constexpr float wheel_r = -0.5;
 
     Kinematics kin(WHEEL_RADIUS, WHEEL_BASE, PULSES_PER_ROTATION);
     auto lin_ang = kin.forward(WheelSpeed {wheel_l,wheel_r});
@@ -95,10 +93,9 @@ TEST(KinematicsTest, ForwardAndBackwardSI) {
     EXPECT_NEAR(result.r, wheel_r, ERROR);
 }
 
-
 TEST(KinematicsTest, ForwardAndBackwardEncoderDiff) {
-    const int encoder_l = 0;
-    const int encoder_r = 550;
+    constexpr int encoder_l = 0;
+    constexpr int encoder_r = 550;
 
     Kinematics kin(WHEEL_RADIUS, WHEEL_BASE, PULSES_PER_ROTATION);
     auto d_robot_pose = kin.forward(Encoders {encoder_l,encoder_r});
@@ -107,7 +104,6 @@ TEST(KinematicsTest, ForwardAndBackwardEncoderDiff) {
     EXPECT_NEAR(result.r, encoder_r, 1);
 }
 
-// Main function to run all tests
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

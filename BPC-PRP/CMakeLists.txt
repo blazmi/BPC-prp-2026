@@ -15,16 +15,17 @@ find_package(OpenCV REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
+# Zde jsou sjednocené cesty pro všechny tvé zdrojové soubory
 set(SRC
-    ${CMAKE_SOURCE_DIR}/src/example.cpp
+        ${CMAKE_SOURCE_DIR}/src/example.cpp
         ${CMAKE_SOURCE_DIR}/src/nodes/io_node.cpp
         ${CMAKE_SOURCE_DIR}/src/nodes/motor_node.cpp
         #${CMAKE_SOURCE_DIR}/src/kinematic.cpp
 
         ${CMAKE_SOURCE_DIR}/src/odometry.cpp
         ${CMAKE_SOURCE_DIR}/src/nodes/Line_node.cpp
-
-
+        ${CMAKE_SOURCE_DIR}/src/algorithms/line_estimator.cpp
+        tests/t_line_estimator.cpp
 )
 
 set(AMENT_LIBS rclcpp std_msgs sensor_msgs cv_bridge image_transport)
@@ -42,4 +43,5 @@ ament_target_dependencies(${PROJECT_NAME} rclcpp std_msgs sensor_msgs cv_bridge 
 install(TARGETS ${PROJECT_NAME} DESTINATION lib/${PROJECT_NAME})
 ament_package()
 
+# ZAKOMENTOVÁNO: Tímto jsme vypli načítání složky s testy
 add_subdirectory(tests)

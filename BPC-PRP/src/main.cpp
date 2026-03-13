@@ -20,10 +20,6 @@ int main(int argc, char* argv[]) {
     //executor->add_node(encoder_node);
     executor->add_node(line_node);
 
-    while (1) {
-        motor_node->set_motor_vel(100,100);
-        //executor->spin();
-    }
 
     // Přidáš IoNode do executoru
 
