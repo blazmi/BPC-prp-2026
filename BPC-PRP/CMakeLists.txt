@@ -16,16 +16,22 @@ find_package(SDL2 REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
 # Zde jsou sjednocené cesty pro všechny tvé zdrojové soubory
+# Zde jsou sjednocené cesty pro všechny tvé zdrojové soubory
 set(SRC
         ${CMAKE_SOURCE_DIR}/src/example.cpp
         ${CMAKE_SOURCE_DIR}/src/nodes/io_node.cpp
         ${CMAKE_SOURCE_DIR}/src/nodes/motor_node.cpp
-        #${CMAKE_SOURCE_DIR}/src/kinematic.cpp
+
+        # OPRAVA 1: Odkomentováno a přidána správná cesta ke kinematice
+        ${CMAKE_SOURCE_DIR}/src/kinematics.cpp
 
         ${CMAKE_SOURCE_DIR}/src/odometry.cpp
         ${CMAKE_SOURCE_DIR}/src/nodes/Line_node.cpp
         ${CMAKE_SOURCE_DIR}/src/algorithms/line_estimator.cpp
-        tests/t_line_estimator.cpp
+        ${CMAKE_SOURCE_DIR}/src/loops/line_loop.cpp
+
+        # OPRAVA 2: Testovací soubor jsme smazali (zakomentovali), sem nepatří!
+        # ${CMAKE_SOURCE_DIR}/tests/t_line_estimator.cpp
 )
 
 set(AMENT_LIBS rclcpp std_msgs sensor_msgs cv_bridge image_transport)

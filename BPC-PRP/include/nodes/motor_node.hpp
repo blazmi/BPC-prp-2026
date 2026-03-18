@@ -22,13 +22,18 @@ namespace nodes {
 
         // Function to retrieve the last pressed button value
 
-
     private:
         void timer_callback();
         void set_motor_vel(uint8_t vel_l = 150, uint8_t vel_r = 150);
 
+        // NOVÉ: Callback pro zachycení zpráv z lineLoopu
+        void cmd_callback(const std_msgs::msg::UInt8MultiArray::SharedPtr msg);
+
         rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr motor_vel_pub_;
         rclcpp::TimerBase::SharedPtr timer_;
+
+        // NOVÉ: Přidáváme Subscriber
+        rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr cmd_sub_;
     };
 
 

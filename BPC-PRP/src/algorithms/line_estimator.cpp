@@ -5,7 +5,7 @@ namespace algorithms {
     float LineEstimator::estimate_continuous(float left_val, float right_val) {
         // Jednoduchý rozdíl senzorů. Vrací hodnoty v rozsahu [-1.0, 1.0]
         // Kladné číslo = čára je vlevo, Záporné číslo = čára je vpravo, 0 = uprostřed
-        return (left_val - right_val)*0.015f;// je nutne doplnit vzdalenost senzoru po co oni caru uvidi
+        return (left_val - right_val)*0.030f;// je nutne doplnit vzdalenost senzoru po co oni caru uvidi
     }
 
     DiscreteLinePose LineEstimator::estimate_discrete(float left_val, float right_val)

@@ -4,6 +4,7 @@
 #include "nodes/io_node.hpp"
 #include "nodes/motor_node.hpp"
 #include "nodes/Line_node.hpp"
+#include "loops/line_loop.hpp"
 
 int main(int argc, char* argv[]) {
     rclcpp::init(argc, argv);
@@ -13,20 +14,21 @@ int main(int argc, char* argv[]) {
     // Vytvoříš IoNode (ten už JE Node)
     auto io_node = std::make_shared<nodes::IoNode>();
     auto motor_node = std::make_shared<nodes::motorNode>();
-    //auto encoder_node = std::make_shared<nodes::EncoderNode>();
+    auto encoder_node = std::make_shared<nodes::EncoderNode>();
     auto line_node = std::make_shared<nodes::LineNode>();
+    auto lineLoop = std::make_shared<nodes::lineLoop>();
     executor->add_node(io_node);
     executor->add_node(motor_node);
-    //executor->add_node(encoder_node);
+    executor->add_node(encoder_node);
     executor->add_node(line_node);
-
+    executor->add_node(lineLoop);
 
     // Přidáš IoNode do executoru
 
 
     //rclcpp::spin(motor_Node);
 
-        executor->spin();
+    executor->spin();
 
     rclcpp::shutdown();
     return 0;

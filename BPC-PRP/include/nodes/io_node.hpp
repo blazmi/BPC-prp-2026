@@ -3,7 +3,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/u_int8.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
-
+#include <std_msgs/msg/bool.hpp> // Přidej nahoru k ostatním includům
+#include <std_msgs/msg/empty.hpp> // PŘIDÁNO: Knihovna pro prázdnou zprávu
 
 namespace nodes {
     class IoNode : public rclcpp::Node {
@@ -24,6 +25,8 @@ namespace nodes {
         // Subscriber for button press messages
         rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr button_subscriber_;
         rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr led_publisher_;
+        rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr enable_pub_;
+        rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr calibrate_pub_;
         // Callback - preprocess received message
         void on_button_callback(const std_msgs::msg::UInt8::SharedPtr msg);
 

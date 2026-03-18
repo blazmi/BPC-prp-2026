@@ -4,29 +4,32 @@
 /* 585 pulsu na otacku, muze za to madar*/
 #include "nodes/motor_node.hpp"
 namespace nodes {
-    motorNode::motorNode()
-   : rclcpp::Node("motor")   // Initialize base Node with node name
-   {
+    motorNode::motorNode() : rclcpp::Node("motor") {
+        motor_vel_pub_ = this->create_publisher<std_msgs::msg::UInt8MultiArray>(
+            "/bpc_prp_robot/set_motor_speeds",
+            rclcpp::QoS(10)
+        );
 
-       motor_vel_pub_ = this->create_publisher<std_msgs::msg::UInt8MultiArray>(
-        "/bpc_prp_robot/set_motor_speeds",
-        rclcpp::QoS(10));
+        // Inicializace Subscriberu
+        cmd_sub_ = this->create_subscription<std_msgs::msg::UInt8MultiArray>(
+            "/line_loop/motor_cmds",
+            10,
+            [this](const std_msgs::msg::UInt8MultiArray::SharedPtr msg) { this->cmd_callback(msg); }
+        );
 
-        timer_ = this->create_wall_timer(
-       std::chrono::milliseconds(10),
-       std::bind(&motorNode::timer_callback, this)
-
-    );
-   }
-
-    void motorNode::timer_callback()
-    {
-        // tady si můžeš měnit rychlost
-         set_motor_vel(200, 255);
     }
 
+    // Tady zpracujeme přijatou zprávu od lineLoopu
+    void motorNode::cmd_callback(const std_msgs::msg::UInt8MultiArray::SharedPtr msg) {
+        // Bezpečnostní kontrola, jestli nám opravdu přišly dvě hodnoty
+        if (msg->data.size() >= 2) {
+            uint8_t vel_l = msg->data[0];
+            uint8_t vel_r = msg->data[1];
 
-
+            // Zavoláme tvoji stávající metodu, která to pošle robotovi!
+            set_motor_vel(vel_l, vel_r);
+        }
+    }
 
     void motorNode::set_motor_vel(uint8_t vel_l, uint8_t vel_r )
     {
@@ -64,9 +67,9 @@ namespace nodes {
         int left_encoder  = msg->data[0];
         int right_encoder = msg->data[1];
 
-        RCLCPP_INFO(this->get_logger(),
-                    "Encoders: L=%u R=%u",
-                    left_encoder, right_encoder);
+     //   RCLCPP_INFO(this->get_logger(),
+     //               "Encoders: L=%u R=%u",
+     //               left_encoder, right_encoder);
     }
 
     // ...
