@@ -8,6 +8,7 @@ add_executable(t_line_estimator
         t_line_estimator.cpp
         ${PROJECT_SOURCE_DIR}/src/algorithms/line_estimator.cpp
         t_pid.cpp
+        ../src/algorithms/PlanarImuIntegrator.cpp
 )
 
 # 3. Přidání cest k hlavičkovým souborům
