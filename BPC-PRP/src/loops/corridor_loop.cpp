@@ -1,125 +1,173 @@
-//
-// Created by blazmi on 15.03.26.
-//
 #include "loops/corridor_loop.hpp"
-
 #include <chrono>
 #include <functional>
-#include <algorithm> // Nutné pro std::clamp
-#include <cmath>     // Nutné pro std::round
+#include <algorithm>
+#include <cmath>
 
 namespace nodes {
 
-    // Konstruktor
-    corridorLoop::corridorLoop() : rclcpp::Node("corridorLoop"), pid_{1.0f, 0.5f, 0.2f},
-         kinematics_{0.034, 0.123, 585},
-         last_time_(this->now())
+    corridorLoop::corridorLoop() : rclcpp::Node("corridorLoop"),
+        pid_{1.0f, 0.1f, 0.05f},
+       kinematics_{0.034, 0.123, 585},
+       // TADY JE ZMĚNA: Používáme hodiny nodu místo obecného now()
+       last_time_(this->get_clock()->now()),
+       last_imu_time_(this->get_clock()->now()),
+       state_(State::CALIBRATION)
     {
-        // Inicializace Publisheru pro motory
-        cmd_pub_ = this->create_publisher<std_msgs::msg::UInt8MultiArray>(
-            "/corridor_loop/motor_cmds",
-            10
-        );
+        // Publishery
+        cmd_pub_ = this->create_publisher<std_msgs::msg::UInt8MultiArray>("/corridor_loop/motor_cmds", 10);
 
-        // ZMĚNA: Posloucháme pole vzdáleností z našeho Lidar filtru
+        // Subscribery
         lidar_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-            "filtered_distances", // Topic z předchozího kódu
-            10,
-            [this](const std_msgs::msg::Float32MultiArray::SharedPtr msg) { this->lidar_callback(msg); }
-        );
+            "filtered_distances", 10, [this](const std_msgs::msg::Float32MultiArray::SharedPtr msg) { this->lidar_callback(msg); });
+
+        imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
+            "/bpc_prp_robot/imu", rclcpp::SensorDataQoS(), [this](const sensor_msgs::msg::Imu::SharedPtr msg) { this->imu_callback(msg); });
 
         enable_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "/robot/enable",
-            10,
-            [this](const std_msgs::msg::Bool::SharedPtr msg) { this->enable_callback(msg); }
-        );
+            "/robot/enable", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) { this->enable_callback(msg); });
 
-        // Inicializace Timeru
-        timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(10),
-            [this]() { this->corridor_loop_timer_callback(); }
-        );
+        // Timer (100 Hz pro hladké řízení)
+        timer_ = this->create_wall_timer(std::chrono::milliseconds(10), [this]() { this->corridor_loop_timer_callback(); });
+
+        RCLCPP_INFO(this->get_logger(), "Corridor Loop inicializován. Čekám na kalibraci IMU...");
     }
 
-    void corridorLoop::enable_callback(const std_msgs::msg::Bool::SharedPtr msg) {
-        is_enabled_ = msg->data;
-        if (is_enabled_) {
-            RCLCPP_INFO(this->get_logger(), "ROBOT ODSTARTOVAL DO KORIDORU!");
+    void corridorLoop::imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg) {
+        rclcpp::Time now = this->get_clock()->now();
+
+        // První průběh: last_imu_time_ může být z jiné doby, tak ho jen zinicializujeme
+        if (last_imu_time_.nanoseconds() == 0) {
+            last_imu_time_ = now;
+            return;
+        }
+
+        double dt = (now - last_imu_time_).seconds();
+        last_imu_time_ = now;
+
+        if (dt <= 0 || dt > 0.1) return; // Ochrana proti nesmyslným skokům v čase
+
+        if (state_ == State::CALIBRATION) {
+            // Sběr vzorků pro offset (drift)
+            calibration_samples_.push_back(msg->angular_velocity.z);
+            if (calibration_samples_.size() >= 200) {
+                float sum = std::accumulate(calibration_samples_.begin(), calibration_samples_.end(), 0.0f);
+                gyro_offset_ = sum / calibration_samples_.size();
+                state_ = State::CORRIDOR_FOLLOWING;
+                RCLCPP_INFO(this->get_logger(), "Kalibrace hotova! Offset: %.4f. Startuji CORRIDOR_FOLLOWING.", gyro_offset_);
+            }
         } else {
-            RCLCPP_INFO(this->get_logger(), "ROBOT ZASTAVEN!");
+            // Integrace YAW (úhlu natočení)
+            float corrected_gyro = msg->angular_velocity.z - gyro_offset_;
+            current_yaw_ += corrected_gyro * static_cast<float>(dt);
         }
     }
 
-    // ZMĚNA: Nový callback pro zpracování LiDAR dat
     void corridorLoop::lidar_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
-        // Kontrola, zda máme všechny 4 hodnoty (vpředu, vzadu, vlevo, vpravo)
         if (msg->data.size() < 4) return;
+        front_distance_ = msg->data[0];
+        left_dist_ = msg->data[2];
+        right_dist_ = msg->data[3];
 
-        float front = msg->data[0];
-        float left = msg->data[2];
-        float right = msg->data[3];
-
-        // Uložíme si vzdálenost před námi pro případné nouzové zastavení
-        front_distance_ = front;
-
-        // VÝPOČET CHYBY PRO PID
-        // Pokud jedna ze stěn zmizí (vrací nekonečno), chyba je dočasně 0 (jedeme rovně)
-        if (std::isinf(left) || std::isinf(right)) {
+        // Výpočet chyby pro PID (vzdálenost od středu)
+        if (std::isinf(left_dist_) || std::isinf(right_dist_)) {
             current_error_ = 0.0f;
         } else {
-            // Rozdíl vzdáleností.
-            // Kladná chyba = levá stěna je dál (jsme moc vpravo) -> zatáčíme doleva
-            // Záporná chyba = pravá stěna je dál (jsme moc vlevo) -> zatáčíme doprava
-            current_error_ = 0/*left - right*/;
+            current_error_ = left_dist_ - right_dist_;
         }
     }
 
     void corridorLoop::corridor_loop_timer_callback() {
-        // 1. Zjištění času a výpočet dt
-        rclcpp::Time current_time = this->now();
-        double dt = (current_time - last_time_).seconds();
-        last_time_ = current_time;
-
-        if (dt <= 0.0) return;
-
-        // 2. Řešení Start/Stop a bezpečnostní brzda (pokud jsme moc blízko zdi vepředu)
-        // Zastavíme, pokud nejsme zapnutí, nebo pokud je překážka blíž než 0.25 metru
-        if (!is_enabled_ || front_distance_ < 0.25f) {
-            std_msgs::msg::UInt8MultiArray stop_msg;
-            stop_msg.data = {127, 127}; // 127 = stojíme
-            cmd_pub_->publish(stop_msg);
-
-            if (front_distance_ < 0.25f && is_enabled_) {
-                 RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Prekazka vepredu! Zastavuji.");
-            }
+        if (!is_enabled_) {
+            send_motor_cmd(127, 127);
             return;
         }
 
-        // 3. PID regulátor vypočítá potřebnou rychlost zatáčení (omega v rad/s)
-        // Snažíme se srazit current_error_ na 0
+        rclcpp::Time now = this->now();
+        double dt = (now - last_time_).seconds();
+        last_time_ = now;
+
+        switch (state_) {
+            case State::CALIBRATION:
+                send_motor_cmd(127, 127); // Stát při kalibraci
+                break;
+
+            case State::CORRIDOR_FOLLOWING:
+                handle_corridor_following(dt);
+                break;
+
+            case State::TURNING:
+                handle_turning();
+                break;
+        }
+    }
+
+    void corridorLoop::handle_corridor_following(double dt) {
+        // Detekce rohu (překážka před námi + volno na straně)
+        if (front_distance_ < 0.25f) {
+            if (left_dist_ > 0.3f) {
+                target_yaw_ = current_yaw_ + (M_PI / 2.0f); // +90 stupňů
+                state_ = State::TURNING;
+                RCLCPP_INFO(this->get_logger(), "Detekován roh! Točím doleva.");
+                return;
+            } else if (right_dist_ > 0.3f) {
+                target_yaw_ = current_yaw_ - (M_PI / 2.0f); // -90 stupňů
+                state_ = State::TURNING;
+                RCLCPP_INFO(this->get_logger(), "Detekován roh! Točím doprava.");
+                return;
+            }
+        }
+
+        // Standardní jízda chodbou
         float omega = pid_.step(current_error_, dt);
+        float v_base = 0.10f; // Trochu pomalejší pro stabilitu v labu
 
-        // 4. Nastavení dopředné rychlosti (v)
-        float v_base = 0.05f;
+        publish_kinematics(v_base, omega);
+    }
 
-        // 5. Výpočet inverzní kinematiky (získáme požadované otáčky kol v rad/s)
-        algorithms::RobotSpeed desired_speed{v_base, omega};
+    void corridorLoop::handle_turning() {
+        float yaw_error = target_yaw_ - current_yaw_;
+
+        // Pokud jsme v toleranci cca 3 stupňů, považujeme otočku za hotovou
+        if (std::abs(yaw_error) < 0.05f) {
+            state_ = State::CORRIDOR_FOLLOWING;
+            RCLCPP_INFO(this->get_logger(), "Otočka dokončena. Pokračuji chodbou.");
+            return;
+        }
+
+        // P regulátor pro otáčení na místě
+        float Kp_turn = 1.5f;
+        float omega_turn = Kp_turn * yaw_error;
+
+        publish_kinematics(0.0f, omega_turn);
+    }
+
+    void corridorLoop::publish_kinematics(float v, float omega) {
+        algorithms::RobotSpeed desired_speed{v, omega};
         algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(desired_speed);
 
-        // 6. Převod fyzikálních otáček (rad/s) na řídicí signál motorů (0 - 255)
         int pwm_l = 127 + std::round(wheel_speeds.l * rad_s_to_pwm_);
         int pwm_r = 127 + std::round(wheel_speeds.r * rad_s_to_pwm_);
 
-        // 7. Bezpečnostní ořezání (clamp)
-        pwm_l = std::clamp(pwm_l, 0, 255);
-        pwm_r = std::clamp(pwm_r, 0, 255);
-        //RCLCPP_INFO(this->get_logger(),
-        //    "Publikováno -> Vpředu: %d | Vzadu: %d ",pwm_l, pwm_r);
+        send_motor_cmd(std::clamp(pwm_l, 0, 255), std::clamp(pwm_r, 0, 255));
+    }
 
-        // 8. Odeslání povelů
+    void corridorLoop::send_motor_cmd(int l, int r) {
         std_msgs::msg::UInt8MultiArray out_msg;
-        out_msg.data = {static_cast<uint8_t>(pwm_l), static_cast<uint8_t>(pwm_r)};
+        out_msg.data = {static_cast<uint8_t>(l), static_cast<uint8_t>(r)};
         cmd_pub_->publish(out_msg);
+    }
+
+    void corridorLoop::enable_callback(const std_msgs::msg::Bool::SharedPtr msg) {
+        is_enabled_ = msg->data;
+
+        if (is_enabled_) {
+            RCLCPP_INFO(this->get_logger(), "ROBOT AKTIVOVÁN - Startuji logiku koridoru.");
+        } else {
+            RCLCPP_INFO(this->get_logger(), "ROBOT DEAKTIVOVÁN - Zastavuji motory.");
+            // Při vypnutí rovnou pošleme stopku, nečekáme na timer
+            send_motor_cmd(127, 127);
+        }
     }
 
 } // namespace nodes

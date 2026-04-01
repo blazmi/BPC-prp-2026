@@ -7,6 +7,7 @@
 #include "loops/line_loop.hpp"
 #include "nodes/lidar_node.hpp"
 #include "loops/corridor_loop.hpp"
+#include "nodes/imu_node.hpp"
 
 int main(int argc, char* argv[]) {
     rclcpp::init(argc, argv);
@@ -21,12 +22,14 @@ int main(int argc, char* argv[]) {
     //auto lineLoop = std::make_shared<nodes::lineLoop>();
     auto lidar_node = std::make_shared<nodes::LidarFilterNode>();
     auto corridor_loop = std::make_shared<nodes::corridorLoop>();
+    auto imu_node = std::make_shared<nodes::ImuNode>();
     executor->add_node(io_node);
     executor->add_node(motor_node);
     executor->add_node(encoder_node);
     //executor->add_node(line_node);
     executor->add_node(lidar_node);
     executor->add_node(corridor_loop);
+    executor->add_node(imu_node);
 //    executor->add_node(lineLoop);
 
     // Přidáš IoNode do executoru

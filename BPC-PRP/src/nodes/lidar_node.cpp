@@ -43,9 +43,9 @@ namespace nodes {
         publisher_->publish(pub_msg);
 
         // Vypisujeme už jen reálné vzdálenosti (původní matoucí výpis jsem smazal)
-        RCLCPP_INFO(this->get_logger(),
+       /* RCLCPP_INFO(this->get_logger(),
             "Publikováno -> Vpředu: %.2f | Vzadu: %.2f | Vlevo: %.2f | Vpravo: %.2f",
             results.front, results.back, results.left, results.right
-       );
+       );*/
     }
 }

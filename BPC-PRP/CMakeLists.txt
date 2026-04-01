@@ -29,7 +29,7 @@ set(SRC
         ${CMAKE_SOURCE_DIR}/src/nodes/Line_node.cpp
         ${CMAKE_SOURCE_DIR}/src/algorithms/line_estimator.cpp
         ${CMAKE_SOURCE_DIR}/src/loops/line_loop.cpp
-        src/nodes/imu_node.cpp
+        ${CMAKE_SOURCE_DIR}/src/nodes/imu_node.cpp
         ${CMAKE_SOURCE_DIR}/src/nodes/lidar_node.cpp
         ${CMAKE_SOURCE_DIR}/src/loops/corridor_loop.cpp
 
