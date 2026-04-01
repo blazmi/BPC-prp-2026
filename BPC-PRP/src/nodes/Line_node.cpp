@@ -75,8 +75,8 @@ namespace nodes {
         float r_calibrated = std::clamp(r_raw, 0.0f, 1.0f);
 
         float current_continuous = algorithms::LineEstimator::estimate_continuous(l_calibrated, r_calibrated);
-        RCLCPP_INFO(this->get_logger(), "KALIBRACE HOTOVA! L %u R %u",
-                                    left, right);
+        //RCLCPP_INFO(this->get_logger(), "KALIBRACE HOTOVA! L %u R %u",
+        //                            left, right);
         continuous_.store(current_continuous);
         discrete_.store(algorithms::LineEstimator::estimate_discrete(l_calibrated, r_calibrated));
 

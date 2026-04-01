@@ -12,7 +12,7 @@ namespace nodes {
 
         // Inicializace Subscriberu
         cmd_sub_ = this->create_subscription<std_msgs::msg::UInt8MultiArray>(
-            "/line_loop/motor_cmds",
+            "/corridor_loop/motor_cmds",
             10,
             [this](const std_msgs::msg::UInt8MultiArray::SharedPtr msg) { this->cmd_callback(msg); }
         );

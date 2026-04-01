@@ -11,7 +11,7 @@
 namespace nodes {
 
     // Konstruktor
-    corridorLoop::corridorLoop() : rclcpp::Node("corridorLoop"), pid_{25.0f, 0.5f, 0.2f},
+    corridorLoop::corridorLoop() : rclcpp::Node("corridorLoop"), pid_{1.0f, 0.5f, 0.2f},
          kinematics_{0.034, 0.123, 585},
          last_time_(this->now())
     {
@@ -70,7 +70,7 @@ namespace nodes {
             // Rozdíl vzdáleností.
             // Kladná chyba = levá stěna je dál (jsme moc vpravo) -> zatáčíme doleva
             // Záporná chyba = pravá stěna je dál (jsme moc vlevo) -> zatáčíme doprava
-            current_error_ = left - right;
+            current_error_ = 0/*left - right*/;
         }
     }
 
@@ -100,7 +100,7 @@ namespace nodes {
         float omega = pid_.step(current_error_, dt);
 
         // 4. Nastavení dopředné rychlosti (v)
-        float v_base = 0.15f;
+        float v_base = 0.05f;
 
         // 5. Výpočet inverzní kinematiky (získáme požadované otáčky kol v rad/s)
         algorithms::RobotSpeed desired_speed{v_base, omega};
@@ -113,6 +113,8 @@ namespace nodes {
         // 7. Bezpečnostní ořezání (clamp)
         pwm_l = std::clamp(pwm_l, 0, 255);
         pwm_r = std::clamp(pwm_r, 0, 255);
+        //RCLCPP_INFO(this->get_logger(),
+        //    "Publikováno -> Vpředu: %d | Vzadu: %d ",pwm_l, pwm_r);
 
         // 8. Odeslání povelů
         std_msgs::msg::UInt8MultiArray out_msg;
