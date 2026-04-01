@@ -103,43 +103,70 @@ namespace nodes {
     }
 
     void corridorLoop::handle_corridor_following(double dt) {
-        // Detekce rohu (překážka před námi + volno na straně)
-        if (front_distance_ < 0.25f) {
-            if (left_dist_ > 0.3f) {
-                target_yaw_ = current_yaw_ + (M_PI / 2.0f); // +90 stupňů
+        // 1. Detekce rohu zůstává podobná
+        if (front_distance_ < 0.35f) {
+            if (left_dist_ > 0.8f) {
+                base_yaw_ += M_PI / 2.0f; // Nový základní směr je o 90° vlevo
                 state_ = State::TURNING;
-                RCLCPP_INFO(this->get_logger(), "Detekován roh! Točím doleva.");
                 return;
-            } else if (right_dist_ > 0.3f) {
-                target_yaw_ = current_yaw_ - (M_PI / 2.0f); // -90 stupňů
+            } else if (right_dist_ > 0.8f) {
+                base_yaw_ -= M_PI / 2.0f; // Nový základní směr je o 90° vpravo
                 state_ = State::TURNING;
-                RCLCPP_INFO(this->get_logger(), "Detekován roh! Točím doprava.");
                 return;
             }
         }
 
-        // Standardní jízda chodbou
-        float omega = pid_.step(current_error_, dt);
-        float v_base = 0.10f; // Trochu pomalejší pro stabilitu v labu
+        // 2. KASKÁDOVÁ REGULACE
+        // Výpočet korekce z LiDARu (převádíme metr na radiány)
+        // K_lidar_to_yaw určuje, jak moc agresivně se chceme vracet na střed
+        float K_lidar_to_yaw = 0.5f;
+        float lidar_correction = current_error_ * K_lidar_to_yaw;
+
+        // Limitujeme korekci, aby robot nezačal dělat prudké manévry (max 15 stupňů)
+        lidar_correction = std::clamp(lidar_correction, -0.26f, 0.26f);
+
+        // Cílový úhel pro IMU = základní směr chodby + korekce pro vystředění
+        float target_yaw = base_yaw_ + lidar_correction;
+
+        // 3. PID regulátor nyní hlídá ÚHEL (yaw), ne vzdálenost
+        float yaw_error = target_yaw - current_yaw_;
+
+        // Normalizace chyby úhlu
+        while (yaw_error > M_PI) yaw_error -= 2.0f * M_PI;
+        while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
+
+        float omega = pid_.step(yaw_error, dt);
+        float v_base = 0.12f; // Konstantní dopředná rychlost
 
         publish_kinematics(v_base, omega);
     }
 
     void corridorLoop::handle_turning() {
-        float yaw_error = target_yaw_ - current_yaw_;
+        // Cílem je dosáhnout base_yaw_ (který jsme změnili při detekci rohu)
+        float yaw_error = base_yaw_ - current_yaw_;
 
-        // Pokud jsme v toleranci cca 3 stupňů, považujeme otočku za hotovou
+        // Normalizace
+        while (yaw_error > M_PI) yaw_error -= 2.0f * M_PI;
+        while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
+
         if (std::abs(yaw_error) < 0.05f) {
             state_ = State::CORRIDOR_FOLLOWING;
-            RCLCPP_INFO(this->get_logger(), "Otočka dokončena. Pokračuji chodbou.");
+            RCLCPP_INFO(this->get_logger(), "Zatáčka vybrána, pokračuji rovně.");
             return;
         }
 
-        // P regulátor pro otáčení na místě
-        float Kp_turn = 1.5f;
-        float omega_turn = Kp_turn * yaw_error;
+        // Plynulé otáčení: čím blíž jsme cíli, tím pomaleji se točíme
+        float max_omega = 0.8f; // Maximální rychlost otáčení (rad/s)
+        float Kp_turn = 2.0f;
+        float omega = yaw_error * Kp_turn;
 
-        publish_kinematics(0.0f, omega_turn);
+        // Omezení maximální rychlosti, aby to nebylo "násilné"
+        omega = std::clamp(omega, -max_omega, max_omega);
+
+        // Minimální rychlost, aby se robot neodstavil kvůli tření (deadband)
+        if (std::abs(omega) < 0.2f) omega = (omega > 0) ? 0.2f : -0.2f;
+
+        publish_kinematics(0.0f, omega);
     }
 
     void corridorLoop::publish_kinematics(float v, float omega) {

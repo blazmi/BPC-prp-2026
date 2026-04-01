@@ -42,7 +42,7 @@ namespace nodes {
         // Stav a povolení jízdy
         State state_; // Aktuální stav (začíná CALIBRATION)
         bool is_enabled_ = false;
-
+        float base_yaw_ = 0.0f;
         // Řízení a kinematika
         algorithms::Pid pid_;
         algorithms::Kinematics kinematics_;
