@@ -67,6 +67,7 @@ namespace nodes {
         float gyro_offset_ = 0.0f;
         rclcpp::Time last_imu_time_;
         std::vector<float> calibration_samples_;
+        float lidar_integral_ = 0.0f;
     };
 
 } // namespace nodes
