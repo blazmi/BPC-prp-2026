@@ -4,9 +4,9 @@
 #include <std_msgs/msg/u_int8_multi_array.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
-#include <sensor_msgs/msg/imu.hpp> // NOVÉ: Pro data z MPU6050
+#include <sensor_msgs/msg/imu.hpp>
 
-#include <vector>   // NOVÉ: Pro kalibrační vzorky
+#include <vector>
 #include <numeric>
 
 #include "kinematics.hpp"
@@ -14,7 +14,6 @@
 
 namespace nodes {
 
-    // NOVÉ: Definice stavů robota
     enum class State {
         CALIBRATION,
         CORRIDOR_FOLLOWING,
@@ -30,46 +29,44 @@ namespace nodes {
         // Callbacky
         void enable_callback(const std_msgs::msg::Bool::SharedPtr msg);
         void lidar_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg);
-        void imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg); // NOVÉ
+        void imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg);
         void corridor_loop_timer_callback();
 
-        // Pomocné metody pro logiku stavů (aby nebyl timer_callback příliš dlouhý)
+        // Pomocné metody pro stavový stroj
         void handle_corridor_following(double dt);
         void handle_turning();
         void publish_kinematics(float v, float omega);
         void send_motor_cmd(int l, int r);
 
-        // Stav a povolení jízdy
-        State state_; // Aktuální stav (začíná CALIBRATION)
+        // Stav a řízení
+        float reference_yaw_ = 0.0f; // Pamatuje si směr chodby, než zmizela stěna
+        State state_;
         bool is_enabled_ = false;
-        float base_yaw_ = 0.0f;
-        // Řízení a kinematika
+
         algorithms::Pid pid_;
         algorithms::Kinematics kinematics_;
         rclcpp::Time last_time_;
         float rad_s_to_pwm_ = 5.0f;
 
-        // Komunikace (Pub/Sub)
+        // Komunikace
         rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr cmd_pub_;
         rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr enable_sub_;
         rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr lidar_sub_;
-        rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_; // NOVÉ
-
-        // Timer
+        rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
         rclcpp::TimerBase::SharedPtr timer_;
 
-        // Data z LiDARu
+        // LiDAR data
         float current_error_ = 0.0f;
         float front_distance_ = 99.0f;
-        float left_dist_ = 99.0f;  // NOVÉ
-        float right_dist_ = 99.0f; // NOVÉ
+        float left_dist_ = 99.0f;
+        float right_dist_ = 99.0f;
 
-        // Data z IMU a Yaw integrace
-        float current_yaw_ = 0.0f;     // Integrovaný úhel (radians)
-        float target_yaw_ = 0.0f;      // Cílový úhel pro otočku
-        float gyro_offset_ = 0.0f;     // Drift vypočtený při kalibraci
-        rclcpp::Time last_imu_time_;   // Pro výpočet dt v imu_callbacku
-        std::vector<float> calibration_samples_; // Vzorky pro průměrování driftu
+        // IMU data
+        float current_yaw_ = 0.0f;
+        float target_yaw_ = 0.0f;
+        float gyro_offset_ = 0.0f;
+        rclcpp::Time last_imu_time_;
+        std::vector<float> calibration_samples_;
     };
 
 } // namespace nodes
