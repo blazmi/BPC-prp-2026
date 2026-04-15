@@ -116,13 +116,24 @@ namespace nodes {
             if (cached_marker_ != -1) {
                 saved_marker_ = cached_marker_;
                 cached_marker_ = -1;
-                RCLCPP_INFO(this->get_logger(), "Zaviram cache. Prenasim znacku do pameti: %d", saved_marker_);
+                RCLCPP_INFO(this->get_logger(), "Zaviram cache (Zdi jsou zpet). Prenasim znacku do pameti: %d", saved_marker_);
             }
         }
 
         // --- SCÉNÁŘ A: ZEĎ VEPŘEDU (Zatáčka, T-křižovatka nebo Slepá ulička) ---
-        // NEMUSÍME POPOJÍŽDĚT! Jsme na místě, rovnou točíme.
         if (front_blocked) {
+
+            // NOUZOVÝ PŘESUN CACHE: Pokud se po průjezdu křižovatky zeď nikdy nezavřela (jsme rovnou v zatáčce),
+            // musíme křižovatku logicky ukončit a přenést cache, než uděláme manévr!
+            if (in_intersection_) {
+                in_intersection_ = false;
+                if (cached_marker_ != -1) {
+                    saved_marker_ = cached_marker_;
+                    cached_marker_ = -1;
+                    RCLCPP_INFO(this->get_logger(), "Zaviram cache (Dojel jsem ke zdi). Prenasim: %d", saved_marker_);
+                }
+            }
+
             // Slepá ulička
             if (!side_open) {
                 target_yaw_ += M_PI;
@@ -141,7 +152,6 @@ namespace nodes {
                     target_yaw_ -= (M_PI / 2.0f);
                     RCLCPP_INFO(this->get_logger(), "T-krizovatka: Zatacim DOPRAVA (dle pameti).");
                 } else {
-                    // Pojistka, kdyby nebyla značka nebo byla nesmyslná (např. 0 = rovně do zdi)
                     target_yaw_ -= (M_PI / 2.0f);
                     RCLCPP_WARN(this->get_logger(), "T-krizovatka: Chybi znacka! Volim DOPRAVA.");
                 }
@@ -167,7 +177,7 @@ namespace nodes {
             in_intersection_ = true;
             state_ = State::INTERSECTION;
             distance_driven_in_intersection_ = 0.0f;
-            RCLCPP_INFO(this->get_logger(), "Odbacka detekovana! Popojizdim do stredu... front %f  left %f  right %f",front_distance_,left_dist_, right_dist_);
+            RCLCPP_INFO(this->get_logger(), "Odbacka detekovana! Popojizdim do stredu... front %f  left %f  right %f", front_distance_, left_dist_, right_dist_);
             return;
         }
 
@@ -205,7 +215,7 @@ namespace nodes {
         publish_kinematics(v_base, std::clamp(omega, -1.2f, 1.2f));
     }
 
-    // --- STAV 2: KŘIŽOVATKA (Popojetí 18 cm do středu s volným předkem) ---
+    // --- STAV 2: KŘIŽOVATKA (Popojetí do středu s volným předkem) ---
     void MazeLoop::handle_intersection(double dt) {
         float v_base = 0.08f;
         distance_driven_in_intersection_ += v_base * static_cast<float>(dt);
@@ -213,7 +223,7 @@ namespace nodes {
         bool can_turn_left = (left_dist_ > 0.40f);
         bool can_turn_right = (right_dist_ > 0.40f);
 
-        // Dojeli jsme 18 cm -> Učíníme rozhodnutí
+        // Dojeli jsme do středu
         if (distance_driven_in_intersection_ >= 0.1f) {
 
             if (saved_marker_ == 1 && can_turn_left) {
@@ -229,17 +239,21 @@ namespace nodes {
                 RCLCPP_INFO(this->get_logger(), "Stred dosazen: Zatacim DOPRAVA podle znacky.");
             }
             else {
-                // Jízda rovně (buď značka 0, nebo chybí značka k odbočení)
+                // Jízda rovně
                 if (saved_marker_ == 0) saved_marker_ = -1;
                 state_ = State::CORRIDOR_FOLLOWING;
-                saved_marker_ = cached_marker_;
-                cached_marker_ = -1;
+
+                // LOGICKÝ PŘESUN CACHE PO PRŮJEZDU ROVNĚ
+                in_intersection_ = false;
+                if (cached_marker_ != -1) {
+                    saved_marker_ = cached_marker_;
+                    cached_marker_ = -1;
+                }
                 RCLCPP_INFO(this->get_logger(), "Stred dosazen: Pokracuji ROVNE.");
             }
             return;
         }
 
-        // Dokud nedojedeme 18 cm, držíme rovný směr podle IMU
         float yaw_error = target_yaw_ - current_yaw_;
         while (yaw_error > M_PI) yaw_error -= 2.0f * M_PI;
         while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
@@ -257,6 +271,13 @@ namespace nodes {
         if (std::abs(yaw_error) < 0.05f) {
             state_ = State::CORRIDOR_FOLLOWING;
             lidar_integral_ = 0.0f;
+
+            // LOGICKÝ PŘESUN CACHE PO DOKONČENÍ OTOČKY
+            in_intersection_ = false;
+            if (cached_marker_ != -1) {
+                saved_marker_ = cached_marker_;
+                cached_marker_ = -1;
+            }
             RCLCPP_INFO(this->get_logger(), "Otoceni dokonceno, zpet do koridoru.");
             return;
         }
