@@ -32,6 +32,8 @@ set(SRC
         ${CMAKE_SOURCE_DIR}/src/nodes/imu_node.cpp
         ${CMAKE_SOURCE_DIR}/src/nodes/lidar_node.cpp
         ${CMAKE_SOURCE_DIR}/src/loops/corridor_loop.cpp
+        src/nodes/camera_node.cpp
+        src/loops/maze_loop.cpp
 
         # OPRAVA 2: Testovací soubor jsme smazali (zakomentovali), sem nepatří!
         # ${CMAKE_SOURCE_DIR}/tests/t_line_estimator.cpp
