@@ -159,7 +159,7 @@ void MazeLoop::handle_corridor_following(double dt) {
 
         // --- SCENARIO B: FRONT CLEAR + SIDE OPEN (True Intersection) ---
         // INCREASED TO 0.65f: Ensures we don't confuse corners with intersections!
-        if ((front_distance_ >= 0.65f) && side_open && (state_ != State::INTERSECTION || state_ != State::TURNING)) {
+        if ((front_distance_ >= 0.65f) && side_open && (state_ != State::INTERSECTION && state_ != State::TURNING)) {
             state_ = State::INTERSECTION;
             distance_driven_in_intersection_ = 0.0f;
             RCLCPP_INFO(this->get_logger(), "Intersection detected! Moving to center...");
@@ -198,6 +198,57 @@ void MazeLoop::handle_corridor_following(double dt) {
         }
 
         publish_kinematics(v_base, std::clamp(omega, -1.2f, 1.2f));
+       /* float omega  = 0.0f;
+        float v_base = 0.10f;
+        const float target_wall_dist = 0.15f; // 20 cm od zdi
+
+        bool left_wall  = (left_dist_  < 0.6f);
+        bool right_wall = (right_dist_ < 0.6f);
+        bool both_walls = left_wall && right_wall;
+
+        if (both_walls) {
+            // Obě zdi — původní PID na střed
+            current_error_ = left_dist_ - right_dist_;
+            float Kp = 1.2f, Ki = 0.3f;
+            if (std::abs(current_error_) > 0.01f)
+                lidar_integral_ += current_error_ * static_cast<float>(dt);
+            lidar_integral_ = std::clamp(lidar_integral_, -0.5f, 0.5f);
+            float correction = current_error_ * Kp + lidar_integral_ * Ki;
+            float desired_yaw = target_yaw_ + std::clamp(correction, -0.4f, 0.4f);
+            float yaw_err = desired_yaw - current_yaw_;
+            while (yaw_err >  M_PI) yaw_err -= 2.f * M_PI;
+            while (yaw_err < -M_PI) yaw_err += 2.f * M_PI;
+            omega = yaw_err * 4.0f;
+
+        } else if (left_wall) {
+            // Pouze levá zeď — drž 20 cm od ní
+            float wall_error = left_dist_ - target_wall_dist; // >0 = příliš daleko, <0 = příliš blízko
+            float yaw_err = target_yaw_ - current_yaw_;
+            while (yaw_err >  M_PI) yaw_err -= 2.f * M_PI;
+            while (yaw_err < -M_PI) yaw_err += 2.f * M_PI;
+            omega = yaw_err * 3.0f + wall_error * 1.5f; // yaw + vzdálenostní korekce
+            lidar_integral_ = 0.0f;
+
+        } else if (right_wall) {
+            // Pouze pravá zeď — drž 20 cm od ní
+            float wall_error = target_wall_dist - right_dist_; // >0 = příliš blízko, <0 = příliš daleko
+            float yaw_err = target_yaw_ - current_yaw_;
+            while (yaw_err >  M_PI) yaw_err -= 2.f * M_PI;
+            while (yaw_err < -M_PI) yaw_err += 2.f * M_PI;
+            omega = yaw_err * 3.0f + wall_error * 1.5f;
+            lidar_integral_ = 0.0f;
+
+        } else {
+            // Žádná zeď — jeď rovně podle IMU
+            float yaw_err = target_yaw_ - current_yaw_;
+            while (yaw_err >  M_PI) yaw_err -= 2.f * M_PI;
+            while (yaw_err < -M_PI) yaw_err += 2.f * M_PI;
+            omega = yaw_err * 3.0f;
+            v_base = 0.08f;
+            lidar_integral_ = 0.0f;
+        }
+
+        publish_kinematics(v_base, std::clamp(omega, -1.2f, 1.2f));*/
     }
 
     // --- STATE 2: INTERSECTION (Move to center) ---
@@ -261,7 +312,7 @@ void MazeLoop::handle_corridor_following(double dt) {
                 turn_completed_ = true;
                 distance_driven_in_intersection_ = 0.0f;
                 lidar_integral_ = 0.0f;
-                publish_kinematics(0.0f, 0.0f); // brief pause
+                // brief pause
                 RCLCPP_INFO(this->get_logger(), "Turn done, exiting intersection...");
             } else {
                 float omega = std::clamp(yaw_error * 3.5f, -1.3f, 1.3f);
@@ -279,7 +330,7 @@ void MazeLoop::handle_corridor_following(double dt) {
         float omega = std::clamp(yaw_error * 3.0f, -0.5f, 0.5f);
         publish_kinematics(v_base, omega);
 
-        if (distance_driven_in_intersection_ >= 0.18f) {
+        if (distance_driven_in_intersection_ >= 0.15f) {
             turn_completed_ = false;
             distance_driven_in_intersection_ = 0.0f;
             state_ = State::CORRIDOR_FOLLOWING;

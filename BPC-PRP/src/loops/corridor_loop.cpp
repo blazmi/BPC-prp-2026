@@ -144,6 +144,7 @@ namespace nodes {
         while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
 
         if (std::abs(yaw_error) < 0.05f) {
+            lidar_integral_ = 0;
             state_ = State::CORRIDOR_FOLLOWING;
             lidar_integral_ = 0.0f;
             return;
