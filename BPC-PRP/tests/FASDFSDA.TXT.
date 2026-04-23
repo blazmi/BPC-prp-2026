@@ -32,15 +32,17 @@ namespace nodes {
         timer_ = this->create_wall_timer(std::chrono::milliseconds(10), [this]() { this->corridor_loop_timer_callback(); });
     }
 
-    // --- CAMERA LOGIC: Marker Queue ---
+    // --- CAMERA LOGIC: fronta markerů ---
+    // 0 = rovně, 1 = doleva, 2 = doprava
+    // 11, 12 = poklad (ignorujeme)
     void MazeLoop::camera_callback(const std_msgs::msg::UInt8::SharedPtr msg) {
         int cmd = msg->data;
 
-        // Ignore treasure and unknown commands
+        // Ignoruj poklad a neznámé příkazy
         if (cmd != 0 && cmd != 1 && cmd != 2) return;
 
-        // Add to queue safely
-        if (marker_queue_.size() < 5 && (marker_queue_.empty() || marker_queue_.back() != cmd)) {
+        // Přidej do fronty (max 5 markerů jako pojistka)
+        if (marker_queue_.size() < 5 && (marker_queue_.empty() || marker_queue_.back() != cmd) ) {
             marker_queue_.push(cmd);
             RCLCPP_INFO(this->get_logger(), "Marker queued: %d (queue size: %zu)",
                         cmd, marker_queue_.size());
@@ -98,9 +100,9 @@ namespace nodes {
     }
 
     // --- STATE 1: CORRIDOR FOLLOWING ---
-void MazeLoop::handle_corridor_following(double dt) {
+    void MazeLoop::handle_corridor_following(double dt) {
         const float wall_ok_limit    = 0.30f;
-        const float open_space_limit = 0.50f;
+        const float open_space_limit = 0.40f;
 
         bool in_corridor    = (left_dist_ < wall_ok_limit && right_dist_ < wall_ok_limit);
         bool can_turn_left  = (left_dist_  > open_space_limit);
@@ -108,65 +110,34 @@ void MazeLoop::handle_corridor_following(double dt) {
         bool front_blocked  = (front_distance_ < 0.25f);
         bool side_open      = (can_turn_left || can_turn_right);
 
-        // --- SCENARIO A: FRONT BLOCKED (We must turn immediately) ---
-        // Handles Dead Ends, T-Intersections, and Corners.
-        if (front_blocked) {
-
-            // 1. Dead End
-            if (!side_open) {
-                target_yaw_ += M_PI;
-                RCLCPP_INFO(this->get_logger(), "Dead end! Turning 180. (Marker protected)");
-            }
-            // 2. T-Intersection (We have a choice, so we POP the queue)
-            else if (can_turn_left && can_turn_right) {
-                int current_marker = -1;
-                if (!marker_queue_.empty()) {
-                    current_marker = marker_queue_.front();
-                    marker_queue_.pop();
-                    RCLCPP_INFO(this->get_logger(), "T-Intersection: Using marker %d", current_marker);
-                } else {
-                    RCLCPP_WARN(this->get_logger(), "T-Intersection: Queue empty! Defaulting RIGHT.");
-                }
-
-                if (current_marker == 1) {
-                    target_yaw_ += (M_PI / 2.0f);
-                    RCLCPP_INFO(this->get_logger(), "Turning LEFT.");
-                } else if (current_marker == 2) {
-                    target_yaw_ -= (M_PI / 2.0f);
-                    RCLCPP_INFO(this->get_logger(), "Turning RIGHT.");
-                } else {
-                    // Safety: We cannot go straight into a wall, even if marker says 0
-                    target_yaw_ -= (M_PI / 2.0f);
-                    RCLCPP_WARN(this->get_logger(), "Invalid marker for T-Intersection! Defaulting RIGHT.");
-                }
-            }
-            // 3. Simple Corner Left (No choice, PROTECT the queue)
-            else if (can_turn_left) {
-                target_yaw_ += (M_PI / 2.0f);
-                RCLCPP_INFO(this->get_logger(), "Corner: Turning LEFT. (Marker protected)");
-            }
-            // 4. Simple Corner Right (No choice, PROTECT the queue)
-            else if (can_turn_right) {
-                target_yaw_ -= (M_PI / 2.0f);
-                RCLCPP_INFO(this->get_logger(), "Corner: Turning RIGHT. (Marker protected)");
-            }
-
-            state_ = State::TURNING;
-            turn_completed_ = false;
-            distance_driven_in_intersection_ = 0.0f;
-            return;
-        }
-
-        // --- SCENARIO B: FRONT CLEAR + SIDE OPEN (True Intersection) ---
-        // INCREASED TO 0.65f: Ensures we don't confuse corners with intersections!
-        if ((front_distance_ >= 0.65f) && side_open && (state_ != State::INTERSECTION || state_ != State::TURNING)) {
+        // --- Detekce křižovatky: vpřed volno + otevřená strana ---
+        if (((front_distance_ >= 0.5f) && side_open) || (can_turn_right && can_turn_left)) {
             state_ = State::INTERSECTION;
             distance_driven_in_intersection_ = 0.0f;
             RCLCPP_INFO(this->get_logger(), "Intersection detected! Moving to center...");
             return;
         }
 
-        // --- PID Control in Corridor ---
+        // --- Slepá ulička nebo roh: zatočení bez INTERSECTION fáze ---
+        if (front_blocked) {
+            if (can_turn_left) {
+                target_yaw_ += (M_PI / 2.0f);
+                RCLCPP_INFO(this->get_logger(), "Corner: Turning LEFT.");
+            } else if (can_turn_right) {
+                target_yaw_ -= (M_PI / 2.0f);
+                RCLCPP_INFO(this->get_logger(), "Corner: Turning RIGHT.");
+            } else {
+                // Slepá ulička — otočit o 180°
+                target_yaw_ += M_PI;
+                RCLCPP_INFO(this->get_logger(), "Dead end! Turning 180.");
+            }
+            state_ = State::TURNING;
+            turn_completed_ = false;
+            distance_driven_in_intersection_ = 0.0f;
+            return;
+        }
+
+        // --- PID řízení v koridoru ---
         float omega  = 0.0f;
         float v_base = 0.10f;
 
@@ -200,17 +171,18 @@ void MazeLoop::handle_corridor_following(double dt) {
         publish_kinematics(v_base, std::clamp(omega, -1.2f, 1.2f));
     }
 
-    // --- STATE 2: INTERSECTION (Move to center) ---
+    // --- STATE 2: INTERSECTION (jeď do středu křižovatky) ---
     void MazeLoop::handle_intersection(double dt) {
         float v_base = 0.08f;
         distance_driven_in_intersection_ += v_base * static_cast<float>(dt);
 
+        // Pohybuj se dopředu do středu
         publish_kinematics(v_base, 0.0f);
 
-        // Center reached — make a decision
-        if (distance_driven_in_intersection_ >= 0.15f) {
+        // Střed křižovatky dosažen — rozhodni se
+        if (distance_driven_in_intersection_ >= 0.18f) {
 
-            // Take the oldest marker from the queue
+            // Vezmi nejstarší marker z fronty
             int current_marker = -1;
             if (!marker_queue_.empty()) {
                 current_marker = marker_queue_.front();
@@ -219,11 +191,10 @@ void MazeLoop::handle_corridor_following(double dt) {
                             current_marker, marker_queue_.size());
             } else {
                 RCLCPP_WARN(this->get_logger(), "No marker in queue! Defaulting STRAIGHT.");
-                current_marker = 0; // Default to straight
             }
 
-            bool can_turn_left  = (left_dist_  > 0.50f);
-            bool can_turn_right = (right_dist_ > 0.50f);
+            bool can_turn_left  = (left_dist_  > 0.40f);
+            bool can_turn_right = (right_dist_ > 0.40f);
 
             distance_driven_in_intersection_ = 0.0f;
 
@@ -240,7 +211,7 @@ void MazeLoop::handle_corridor_following(double dt) {
                 RCLCPP_INFO(this->get_logger(), "Center reached: Turning RIGHT.");
             }
             else {
-                // current_marker == 0, or physical turn is impossible
+                // marker == 0, fronta prázdná, nebo zatočení fyzicky nelze → rovně
                 target_yaw_ += 0;
                 state_ = State::TURNING;
                 turn_completed_ = false;
@@ -249,19 +220,19 @@ void MazeLoop::handle_corridor_following(double dt) {
         }
     }
 
-    // --- STATE 3: TURNING IN PLACE + EXIT ---
+    // --- STATE 3: TURNING IN PLACE + výjezd z křižovatky ---
     void MazeLoop::handle_turning(double dt) {
         float yaw_error = target_yaw_ - current_yaw_;
         while (yaw_error >  M_PI) yaw_error -= 2.0f * M_PI;
         while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
 
-        // Phase 1: Turn in place
+        // --- FÁZE 1: Otáčení na místě ---
         if (!turn_completed_) {
             if (std::abs(yaw_error) < 0.05f) {
                 turn_completed_ = true;
                 distance_driven_in_intersection_ = 0.0f;
                 lidar_integral_ = 0.0f;
-                publish_kinematics(0.0f, 0.0f); // brief pause
+                publish_kinematics(0.0f, 0.0f); // krátká pauza — přeruší kmitání
                 RCLCPP_INFO(this->get_logger(), "Turn done, exiting intersection...");
             } else {
                 float omega = std::clamp(yaw_error * 3.5f, -1.3f, 1.3f);
@@ -272,14 +243,14 @@ void MazeLoop::handle_corridor_following(double dt) {
             return;
         }
 
-        // Phase 2: Drive straight to exit intersection
+        // --- FÁZE 2: Výjezd z křižovatky rovně ---
         float v_base = 0.08f;
         distance_driven_in_intersection_ += v_base * static_cast<float>(dt);
 
         float omega = std::clamp(yaw_error * 3.0f, -0.5f, 0.5f);
         publish_kinematics(v_base, omega);
 
-        if (distance_driven_in_intersection_ >= 0.18f) {
+        if (distance_driven_in_intersection_ >= 0.20f) {
             turn_completed_ = false;
             distance_driven_in_intersection_ = 0.0f;
             state_ = State::CORRIDOR_FOLLOWING;

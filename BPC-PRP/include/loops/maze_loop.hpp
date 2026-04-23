@@ -5,8 +5,9 @@
 #include <std_msgs/msg/u_int8.hpp> // NOVÉ: Pro kameru
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <sensor_msgs/msg/imu.hpp>
-
+#include <queue>
 #include <vector>
 #include <numeric>
 
@@ -36,8 +37,13 @@ namespace nodes {
         // ... (mezi privátní proměnné k in_intersection_)
         float distance_driven_in_intersection_ = 0.0f; // Počítadlo pro těch 18 cm
 
-
-
+        //void crossline_callback(const std_msgs::msg::Bool::SharedPtr msg);
+        // ... do private sekce k subscriberům:
+        std::queue<int> marker_queue_;
+        // ... k proměnným pro křižovatku:
+        //bool previous_crossline_ = false;
+        // do private sekce třídy MazeLoop:
+        bool turn_completed_ = false;
         void enable_callback(const std_msgs::msg::Bool::SharedPtr msg);
         void lidar_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg);
         void imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg);
@@ -46,7 +52,7 @@ namespace nodes {
 
         // Pomocné metody pro stavový stroj
         void handle_corridor_following(double dt);
-        void handle_turning();
+        void handle_turning(double dt);
         void publish_kinematics(float v, float omega);
         void send_motor_cmd(int l, int r);
 
@@ -54,7 +60,7 @@ namespace nodes {
         float reference_yaw_ = 0.0f;
         State state_;
         bool is_enabled_ = false;
-
+       // bool pending_cache_transfer_ = false;
         algorithms::Pid pid_;
         algorithms::Kinematics kinematics_;
         rclcpp::Time last_time_;
@@ -70,6 +76,7 @@ namespace nodes {
         rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr lidar_sub_;
         rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
         rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr camera_sub_; // NOVÉ
+        //rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr crossline_sub_;
         rclcpp::TimerBase::SharedPtr timer_;
 
         // LiDAR data
@@ -91,8 +98,8 @@ namespace nodes {
         //int saved_marker_ = -1;
 
         // NOVÉ: Proměnné pro řešení problému s dvojitou značkou
-        int cached_marker_ = -1;     // Záložní paměť pro značku chycenou v křižovatce
-        bool in_intersection_ = false; // Příznak, že se robot fyzicky nachází v křižovatce
+        //int cached_marker_ = -1;     // Záložní paměť pro značku chycenou v křižovatce
+        //bool in_intersection_ = false; // Příznak, že se robot fyzicky nachází v křižovatce
 
         // ... (zbytek) ...
     };

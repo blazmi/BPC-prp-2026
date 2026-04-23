@@ -21,7 +21,7 @@ int main(int argc, char* argv[]) {
     auto io_node = std::make_shared<nodes::IoNode>();
     auto motor_node = std::make_shared<nodes::motorNode>();
     auto encoder_node = std::make_shared<nodes::EncoderNode>();
-    //auto line_node = std::make_shared<nodes::LineNode>();
+    auto line_node = std::make_shared<nodes::LineNode>();
     //auto lineLoop = std::make_shared<nodes::lineLoop>();
     auto lidar_node = std::make_shared<nodes::LidarFilterNode>();
     //auto corridor_loop = std::make_shared<nodes::corridorLoop>();
@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
     executor->add_node(io_node);
     executor->add_node(motor_node);
     executor->add_node(encoder_node);
-    //executor->add_node(line_node);
+    executor->add_node(line_node);
     executor->add_node(lidar_node);
     //executor->add_node(corridor_loop);
     executor->add_node(imu_node);

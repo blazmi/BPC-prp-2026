@@ -7,6 +7,7 @@
 #include <atomic>
 #include "../algorithms/line_estimator.hpp"
 #include <std_msgs/msg/empty.hpp> // PŘIDÁNO: Knihovna pro prázdnou zprávu
+#include <std_msgs/msg/bool.hpp>
 namespace nodes {
 
     class LineNode : public rclcpp::Node {
@@ -30,7 +31,7 @@ namespace nodes {
         void calibrate_callback(const std_msgs::msg::Empty::SharedPtr msg);
 
 
-
+        rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr crossline_pub_;
         std::atomic<algorithms::DiscreteLinePose> discrete_{algorithms::DiscreteLinePose::LineNone};
         std::atomic<float> continuous_{0.0f};
 
