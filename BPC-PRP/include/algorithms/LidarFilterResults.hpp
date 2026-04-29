@@ -24,7 +24,7 @@ namespace algorithms {
             std::vector<float> front{};
             std::vector<float> back{};
 
-            constexpr float angle_range = M_PI / 4.0f;
+            constexpr float angle_range = M_PI / 8.0f;
 
             for (size_t i = 0; i < points.size(); ++i) {
                 auto angle = angle_start + (i * angle_increment);
@@ -47,7 +47,7 @@ namespace algorithms {
 
                 // 3. MOC BLÍZKO: Pokud je objekt blíž než 0.15m, nastavíme vzdálenost na 0.0f.
                 // Tím zajistíme, že node nahlásí nebezpečnou blízkost a robot nenabourá.
-                if (dist < 0.15f) {
+                if (dist < 0.08f) {
                     dist = 0.0f;
                 }
 

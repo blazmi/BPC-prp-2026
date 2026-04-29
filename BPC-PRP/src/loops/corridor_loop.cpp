@@ -97,6 +97,11 @@ namespace nodes {
                 state_ = State::TURNING;
                 return;
             }
+            else {
+                target_yaw_ -= (M_PI); // Doprava
+                state_ = State::TURNING;
+                return;
+            }
         }
 
         float omega = 0.0f;

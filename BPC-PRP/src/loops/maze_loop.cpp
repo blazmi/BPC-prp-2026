@@ -76,7 +76,7 @@ namespace nodes {
         front_distance_ = fix_dist(msg->data[0]);
         left_dist_      = fix_dist(msg->data[2]);
         right_dist_     = fix_dist(msg->data[3]);
-
+        //RCLCPP_INFO(this->get_logger(), "D %f  L %f  R %f",front_distance_,left_dist_,right_dist_);
         if (left_dist_ < 0.6f && right_dist_ < 0.6f) {
             current_error_ = left_dist_ - right_dist_;
         }
@@ -88,7 +88,7 @@ namespace nodes {
         double dt = (now - last_time_).seconds();
         last_time_ = now;
         if (dt <= 0.0) return;
-
+        //RCLCPP_INFO(this->get_logger(), "D %d  ",state_);
         switch (state_) {
             case State::CORRIDOR_FOLLOWING: handle_corridor_following(dt); break;
             case State::INTERSECTION:       handle_intersection(dt);       break;
@@ -99,7 +99,7 @@ namespace nodes {
 
     // --- STATE 1: CORRIDOR FOLLOWING ---
 void MazeLoop::handle_corridor_following(double dt) {
-        const float wall_ok_limit    = 0.30f;
+        const float wall_ok_limit    = 0.40f;
         const float open_space_limit = 0.50f;
 
         bool in_corridor    = (left_dist_ < wall_ok_limit && right_dist_ < wall_ok_limit);
@@ -168,15 +168,18 @@ void MazeLoop::handle_corridor_following(double dt) {
 
         // --- PID Control in Corridor ---
         float omega  = 0.0f;
-        float v_base = 0.10f;
+        float v_base = 0.12f;
 
         if (in_corridor) {
-            float Kp_lidar = 1.2f;
+            float Kp_lidar = 3.0f;
             float Ki_lidar = 0.3f;
 
             if (std::abs(current_error_) > 0.01f) {
                 lidar_integral_ += current_error_ * static_cast<float>(dt);
             }
+            //else {
+            //    target_yaw_ = current_yaw_;
+            //}
             lidar_integral_ = std::clamp(lidar_integral_, -0.5f, 0.5f);
 
             float lidar_correction = (current_error_ * Kp_lidar) + (lidar_integral_ * Ki_lidar);
@@ -193,62 +196,11 @@ void MazeLoop::handle_corridor_following(double dt) {
             while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
 
             omega = yaw_error * 3.0f;
-            v_base = 0.08f;
+            v_base = 0.10f;
             lidar_integral_ = 0.0f;
         }
 
         publish_kinematics(v_base, std::clamp(omega, -1.2f, 1.2f));
-       /* float omega  = 0.0f;
-        float v_base = 0.10f;
-        const float target_wall_dist = 0.15f; // 20 cm od zdi
-
-        bool left_wall  = (left_dist_  < 0.6f);
-        bool right_wall = (right_dist_ < 0.6f);
-        bool both_walls = left_wall && right_wall;
-
-        if (both_walls) {
-            // Obě zdi — původní PID na střed
-            current_error_ = left_dist_ - right_dist_;
-            float Kp = 1.2f, Ki = 0.3f;
-            if (std::abs(current_error_) > 0.01f)
-                lidar_integral_ += current_error_ * static_cast<float>(dt);
-            lidar_integral_ = std::clamp(lidar_integral_, -0.5f, 0.5f);
-            float correction = current_error_ * Kp + lidar_integral_ * Ki;
-            float desired_yaw = target_yaw_ + std::clamp(correction, -0.4f, 0.4f);
-            float yaw_err = desired_yaw - current_yaw_;
-            while (yaw_err >  M_PI) yaw_err -= 2.f * M_PI;
-            while (yaw_err < -M_PI) yaw_err += 2.f * M_PI;
-            omega = yaw_err * 4.0f;
-
-        } else if (left_wall) {
-            // Pouze levá zeď — drž 20 cm od ní
-            float wall_error = left_dist_ - target_wall_dist; // >0 = příliš daleko, <0 = příliš blízko
-            float yaw_err = target_yaw_ - current_yaw_;
-            while (yaw_err >  M_PI) yaw_err -= 2.f * M_PI;
-            while (yaw_err < -M_PI) yaw_err += 2.f * M_PI;
-            omega = yaw_err * 3.0f + wall_error * 1.5f; // yaw + vzdálenostní korekce
-            lidar_integral_ = 0.0f;
-
-        } else if (right_wall) {
-            // Pouze pravá zeď — drž 20 cm od ní
-            float wall_error = target_wall_dist - right_dist_; // >0 = příliš blízko, <0 = příliš daleko
-            float yaw_err = target_yaw_ - current_yaw_;
-            while (yaw_err >  M_PI) yaw_err -= 2.f * M_PI;
-            while (yaw_err < -M_PI) yaw_err += 2.f * M_PI;
-            omega = yaw_err * 3.0f + wall_error * 1.5f;
-            lidar_integral_ = 0.0f;
-
-        } else {
-            // Žádná zeď — jeď rovně podle IMU
-            float yaw_err = target_yaw_ - current_yaw_;
-            while (yaw_err >  M_PI) yaw_err -= 2.f * M_PI;
-            while (yaw_err < -M_PI) yaw_err += 2.f * M_PI;
-            omega = yaw_err * 3.0f;
-            v_base = 0.08f;
-            lidar_integral_ = 0.0f;
-        }
-
-        publish_kinematics(v_base, std::clamp(omega, -1.2f, 1.2f));*/
     }
 
     // --- STATE 2: INTERSECTION (Move to center) ---
@@ -259,7 +211,7 @@ void MazeLoop::handle_corridor_following(double dt) {
         publish_kinematics(v_base, 0.0f);
 
         // Center reached — make a decision
-        if (distance_driven_in_intersection_ >= 0.15f) {
+        if (distance_driven_in_intersection_ >= 0.13f) {
 
             // Take the oldest marker from the queue
             int current_marker = -1;
@@ -303,6 +255,11 @@ void MazeLoop::handle_corridor_following(double dt) {
     // --- STATE 3: TURNING IN PLACE + EXIT ---
     void MazeLoop::handle_turning(double dt) {
         float yaw_error = target_yaw_ - current_yaw_;
+        if (left_dist_ < 0.1) yaw_error -= 10*M_PI/180;
+        else if (right_dist_ <0.1) yaw_error += 10*M_PI/180;
+
+
+
         while (yaw_error >  M_PI) yaw_error -= 2.0f * M_PI;
         while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
 
@@ -327,10 +284,10 @@ void MazeLoop::handle_corridor_following(double dt) {
         float v_base = 0.08f;
         distance_driven_in_intersection_ += v_base * static_cast<float>(dt);
 
-        float omega = std::clamp(yaw_error * 3.0f, -0.5f, 0.5f);
+        float omega = std::clamp(yaw_error * 5.0f, -0.5f, 0.5f);
         publish_kinematics(v_base, omega);
 
-        if (distance_driven_in_intersection_ >= 0.15f) {
+        if (distance_driven_in_intersection_ >= 0.20f) {
             turn_completed_ = false;
             distance_driven_in_intersection_ = 0.0f;
             state_ = State::CORRIDOR_FOLLOWING;

@@ -30,7 +30,7 @@ namespace nodes {
         //VYUŽITÍ INCREMENTU: Předáme increment ze zprávy místo maximálního úhlu
         algorithms::LidarFilterResults results = filter.apply_filter(
            msg->ranges,
-            msg->angle_min,
+           msg->angle_min,
            msg->angle_increment
         );
 
