@@ -49,10 +49,18 @@ namespace nodes {
 
     void MazeLoop::imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg) {
         rclcpp::Time now = this->get_clock()->now();
-        if (last_imu_time_.nanoseconds() == 0) { last_imu_time_ = now; return; }
+
+        // FIX: Inicializace last_imu_time_ na první zprávu, ne v konstruktoru
+        if (last_imu_time_.nanoseconds() == 0) {
+            last_imu_time_ = now;
+            return;
+        }
+
         double dt = (now - last_imu_time_).seconds();
         last_imu_time_ = now;
-        if (dt <= 0 || dt > 0.1) return;
+
+        // FIX: Guard na nesmyslné dt (příliš malé nebo příliš velké)
+        if (dt <= 0.0 || dt > 0.1) return;
 
         if (state_ == State::CALIBRATION) {
             calibration_samples_.push_back(msg->angular_velocity.z);
@@ -60,9 +68,12 @@ namespace nodes {
                 float sum = std::accumulate(calibration_samples_.begin(), calibration_samples_.end(), 0.0f);
                 gyro_offset_ = sum / calibration_samples_.size();
                 current_yaw_ = 0.0f;
-                target_yaw_ = 0.0f;
+                target_yaw_  = 0.0f;
+                // FIX: Reset last_imu_time_ po kalibraci, aby první dt po přepnutí
+                //      nebylo rovno celé době kalibrace (~2-4s) → obrovský yaw skok
+                last_imu_time_ = this->get_clock()->now();
                 state_ = State::CORRIDOR_FOLLOWING;
-                RCLCPP_INFO(this->get_logger(), "Calibration complete!");
+                RCLCPP_INFO(this->get_logger(), "Calibration complete! Offset: %.5f rad/s", gyro_offset_);
             }
         } else {
             float corrected_gyro = msg->angular_velocity.z - gyro_offset_;
@@ -76,7 +87,6 @@ namespace nodes {
         front_distance_ = fix_dist(msg->data[0]);
         left_dist_      = fix_dist(msg->data[2]);
         right_dist_     = fix_dist(msg->data[3]);
-        //RCLCPP_INFO(this->get_logger(), "D %f  L %f  R %f",front_distance_,left_dist_,right_dist_);
         if (left_dist_ < 0.6f && right_dist_ < 0.6f) {
             current_error_ = left_dist_ - right_dist_;
         }
@@ -88,7 +98,7 @@ namespace nodes {
         double dt = (now - last_time_).seconds();
         last_time_ = now;
         if (dt <= 0.0) return;
-        //RCLCPP_INFO(this->get_logger(), "D %d  ",state_);
+
         switch (state_) {
             case State::CORRIDOR_FOLLOWING: handle_corridor_following(dt); break;
             case State::INTERSECTION:       handle_intersection(dt);       break;
@@ -98,7 +108,7 @@ namespace nodes {
     }
 
     // --- STATE 1: CORRIDOR FOLLOWING ---
-void MazeLoop::handle_corridor_following(double dt) {
+    void MazeLoop::handle_corridor_following(double dt) {
         const float wall_ok_limit    = 0.40f;
         const float open_space_limit = 0.50f;
 
@@ -109,15 +119,14 @@ void MazeLoop::handle_corridor_following(double dt) {
         bool side_open      = (can_turn_left || can_turn_right);
 
         // --- SCENARIO A: FRONT BLOCKED (We must turn immediately) ---
-        // Handles Dead Ends, T-Intersections, and Corners.
         if (front_blocked) {
 
             // 1. Dead End
             if (!side_open) {
                 target_yaw_ += M_PI;
-                RCLCPP_INFO(this->get_logger(), "Dead end! Turning 180. (Marker protected)");
+                RCLCPP_INFO(this->get_logger(), "Dead end! Turning 180.");
             }
-            // 2. T-Intersection (We have a choice, so we POP the queue)
+            // 2. T-Intersection (both sides open → pop queue)
             else if (can_turn_left && can_turn_right) {
                 int current_marker = -1;
                 if (!marker_queue_.empty()) {
@@ -135,20 +144,19 @@ void MazeLoop::handle_corridor_following(double dt) {
                     target_yaw_ -= (M_PI / 2.0f);
                     RCLCPP_INFO(this->get_logger(), "Turning RIGHT.");
                 } else {
-                    // Safety: We cannot go straight into a wall, even if marker says 0
                     target_yaw_ -= (M_PI / 2.0f);
                     RCLCPP_WARN(this->get_logger(), "Invalid marker for T-Intersection! Defaulting RIGHT.");
                 }
             }
-            // 3. Simple Corner Left (No choice, PROTECT the queue)
+            // 3. Simple Corner Left
             else if (can_turn_left) {
                 target_yaw_ += (M_PI / 2.0f);
-                RCLCPP_INFO(this->get_logger(), "Corner: Turning LEFT. (Marker protected)");
+                RCLCPP_INFO(this->get_logger(), "Corner: Turning LEFT.");
             }
-            // 4. Simple Corner Right (No choice, PROTECT the queue)
+            // 4. Simple Corner Right
             else if (can_turn_right) {
                 target_yaw_ -= (M_PI / 2.0f);
-                RCLCPP_INFO(this->get_logger(), "Corner: Turning RIGHT. (Marker protected)");
+                RCLCPP_INFO(this->get_logger(), "Corner: Turning RIGHT.");
             }
 
             state_ = State::TURNING;
@@ -158,7 +166,6 @@ void MazeLoop::handle_corridor_following(double dt) {
         }
 
         // --- SCENARIO B: FRONT CLEAR + SIDE OPEN (True Intersection) ---
-        // INCREASED TO 0.65f: Ensures we don't confuse corners with intersections!
         if ((front_distance_ >= 0.65f) && side_open && (state_ != State::INTERSECTION && state_ != State::TURNING)) {
             state_ = State::INTERSECTION;
             distance_driven_in_intersection_ = 0.0f;
@@ -168,18 +175,15 @@ void MazeLoop::handle_corridor_following(double dt) {
 
         // --- PID Control in Corridor ---
         float omega  = 0.0f;
-        float v_base = 0.12f;
+        float v_base = 0.16f;
 
         if (in_corridor) {
-            float Kp_lidar = 3.0f;
-            float Ki_lidar = 0.3f;
+            float Kp_lidar = 1.2f;
+            float Ki_lidar = 0.4f;
 
             if (std::abs(current_error_) > 0.01f) {
                 lidar_integral_ += current_error_ * static_cast<float>(dt);
             }
-            //else {
-            //    target_yaw_ = current_yaw_;
-            //}
             lidar_integral_ = std::clamp(lidar_integral_, -0.5f, 0.5f);
 
             float lidar_correction = (current_error_ * Kp_lidar) + (lidar_integral_ * Ki_lidar);
@@ -205,15 +209,23 @@ void MazeLoop::handle_corridor_following(double dt) {
 
     // --- STATE 2: INTERSECTION (Move to center) ---
     void MazeLoop::handle_intersection(double dt) {
-        float v_base = 0.08f;
+        float yaw_error = target_yaw_ - current_yaw_;
+        float v_base = 0.10f;
+        if (left_dist_ < 0.12f)       yaw_error -= 20.0f * M_PI / 180.0f;
+        else if (right_dist_ < 0.12f) yaw_error += 20.0f * M_PI / 180.0f;
+
+        while (yaw_error >  M_PI) yaw_error -= 2.0f * M_PI;
+        while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
+
+
+
         distance_driven_in_intersection_ += v_base * static_cast<float>(dt);
 
-        publish_kinematics(v_base, 0.0f);
+        float omega = std::clamp(yaw_error * 6.0f, -0.5f, 0.5f);
+        publish_kinematics(v_base, omega);
 
-        // Center reached — make a decision
-        if (distance_driven_in_intersection_ >= 0.13f) {
+        if (distance_driven_in_intersection_ >= 0.08f) {
 
-            // Take the oldest marker from the queue
             int current_marker = -1;
             if (!marker_queue_.empty()) {
                 current_marker = marker_queue_.front();
@@ -222,7 +234,7 @@ void MazeLoop::handle_corridor_following(double dt) {
                             current_marker, marker_queue_.size());
             } else {
                 RCLCPP_WARN(this->get_logger(), "No marker in queue! Defaulting STRAIGHT.");
-                current_marker = 0; // Default to straight
+                current_marker = 2;
             }
 
             bool can_turn_left  = (left_dist_  > 0.50f);
@@ -236,18 +248,18 @@ void MazeLoop::handle_corridor_following(double dt) {
                 turn_completed_ = false;
                 RCLCPP_INFO(this->get_logger(), "Center reached: Turning LEFT.");
             }
-            else if (current_marker == 2 && can_turn_right) {
-                target_yaw_ -= (M_PI / 2.0f);
-                state_ = State::TURNING;
-                turn_completed_ = false;
-                RCLCPP_INFO(this->get_logger(), "Center reached: Turning RIGHT.");
-            }
-            else {
-                // current_marker == 0, or physical turn is impossible
+
+            else if (current_marker == 0) {
                 target_yaw_ += 0;
                 state_ = State::TURNING;
                 turn_completed_ = false;
                 RCLCPP_INFO(this->get_logger(), "Center reached: Continuing STRAIGHT.");
+            }
+            else if (can_turn_right && current_marker == 2) {
+                target_yaw_ -= (M_PI / 2.0f);
+                state_ = State::TURNING;
+                turn_completed_ = false;
+                RCLCPP_INFO(this->get_logger(), "Center reached: Turning RIGHT.");
             }
         }
     }
@@ -255,39 +267,46 @@ void MazeLoop::handle_corridor_following(double dt) {
     // --- STATE 3: TURNING IN PLACE + EXIT ---
     void MazeLoop::handle_turning(double dt) {
         float yaw_error = target_yaw_ - current_yaw_;
-        if (left_dist_ < 0.1) yaw_error -= 10*M_PI/180;
-        else if (right_dist_ <0.1) yaw_error += 10*M_PI/180;
 
-
+        // Korekce při příliš blízké stěně během otáčení
+        if (left_dist_ < 0.1f)       yaw_error -= 20.0f * M_PI / 180.0f;
+        else if (right_dist_ < 0.1f) yaw_error += 20.0f * M_PI / 180.0f;
 
         while (yaw_error >  M_PI) yaw_error -= 2.0f * M_PI;
         while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
 
         // Phase 1: Turn in place
         if (!turn_completed_) {
+            // FIX: Zvětšený deadband 0.05f (místo 0.01f)
+            //      IMU drift způsoboval, že robot threshold 0.01f nikdy nedosáhl
+            //      a otáčel se dál → přetočení
             if (std::abs(yaw_error) < 0.05f) {
                 turn_completed_ = true;
                 distance_driven_in_intersection_ = 0.0f;
                 lidar_integral_ = 0.0f;
-                // brief pause
                 RCLCPP_INFO(this->get_logger(), "Turn done, exiting intersection...");
             } else {
                 float omega = std::clamp(yaw_error * 3.5f, -1.3f, 1.3f);
-                if (std::abs(omega) < 0.5f)
-                    omega = (omega > 0) ? 0.5f : -0.5f;
+
+                // FIX: Minimální omega jen pokud je robot daleko od cíle (> 0.15 rad ~8.6°)
+                //      Původní pevné minimum 0.5f způsobovalo překmit při dobrůžení k cíli
+                if (std::abs(yaw_error) > 0.15f && std::abs(omega) < 0.3f) {
+                    omega = (omega > 0) ? 0.3f : -0.3f;
+                }
+
                 publish_kinematics(0.0f, omega);
             }
             return;
         }
 
         // Phase 2: Drive straight to exit intersection
-        float v_base = 0.08f;
+        float v_base = 0.1f;
         distance_driven_in_intersection_ += v_base * static_cast<float>(dt);
 
         float omega = std::clamp(yaw_error * 5.0f, -0.5f, 0.5f);
         publish_kinematics(v_base, omega);
 
-        if (distance_driven_in_intersection_ >= 0.20f) {
+        if (distance_driven_in_intersection_ >= 0.24f) {
             turn_completed_ = false;
             distance_driven_in_intersection_ = 0.0f;
             state_ = State::CORRIDOR_FOLLOWING;

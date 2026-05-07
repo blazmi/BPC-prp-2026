@@ -33,7 +33,7 @@ namespace nodes {
         void integrate();
 
         ImuNodeMode mode = ImuNodeMode::INTEGRATE;
-
+        rclcpp::Time last_time_{0, 0, RCL_ROS_TIME};
         rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_subscriber_;
         algorithms::PlanarImuIntegrator planar_integrator_;
 

@@ -32,12 +32,12 @@ int main(int argc, char* argv[]) {
     executor->add_node(io_node);
     executor->add_node(motor_node);
     executor->add_node(encoder_node);
-    executor->add_node(line_node);
+    //executor->add_node(line_node);
     executor->add_node(lidar_node);
   //  executor->add_node(corridor_loop);
     executor->add_node(imu_node);
     executor->add_node(camera_node);
-//    executor->add_node(lineLoop);
+    //executor->add_node(lineLoop);
     executor->add_node(maze_loop);
     //executor->add_node(hokus_pokus);
     // Přidáš IoNode do executoru
